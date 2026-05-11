@@ -1,7 +1,7 @@
 import os
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from pinecone import Pinecone, ServerlessSpec, PodSpec
 from typing import List
 from langchain.schema import Document
@@ -31,12 +31,22 @@ def text_split(extracted_data: List[Document]) -> List[Document]:
     print(f"Split {len(extracted_data)} page(s) into {len(text_chunks)} chunks")
     return text_chunks
 
-def download_hugging_face_embeddings() -> HuggingFaceEmbeddings:
+def download_hugging_face_embeddings() -> HuggingFaceInferenceAPIEmbeddings:
     """Download and initialize the HuggingFace sentence-transformer embeddings model."""
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2",
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
+    hf_token = os.environ.get('HF_TOKEN')
+    if not hf_token:
+        # Fallback to local if no token provided (useful for local dev with PyTorch installed)
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        print("Warning: No HF_TOKEN found in environment. Falling back to local HuggingFaceEmbeddings (requires PyTorch, will fail on Vercel).")
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-mpnet-base-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        
+    return HuggingFaceInferenceAPIEmbeddings(
+        api_key=hf_token,
+        model_name="sentence-transformers/all-mpnet-base-v2"
     )
 
 def initialize_pinecone(index_name: str, api_key: str) -> Pinecone:
