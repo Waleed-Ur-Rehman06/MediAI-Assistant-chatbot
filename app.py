@@ -64,33 +64,43 @@ def initialize_components() -> Dict[str, Any]:
         
     except Exception as e:
         print(f"[Initialization Failed] {str(e)}")
-        sys.exit(1)
+        # Remove sys.exit(1) so Vercel doesn't crash on cold start
+        raise e
 
-components = initialize_components()
+# Lazy initialization globals
+qa_chain = None
 
-# ===== Enhanced QA Pipeline =====
-docsearch = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=components['embeddings']
-)
+def get_qa_chain():
+    global qa_chain
+    if qa_chain is not None:
+        return qa_chain
+        
+    components = initialize_components()
 
-# get_prompt_template() now directly returns a PromptTemplate object
-PROMPT = get_prompt_template()
+    # ===== Enhanced QA Pipeline =====
+    docsearch = PineconeVectorStore.from_existing_index(
+        index_name=index_name,
+        embedding=components['embeddings']
+    )
 
-retriever = docsearch.as_retriever(
-    search_type="similarity", # Changed to standard similarity for fast execution
-    search_kwargs={
-        'k': 1 # Limit down to 1 chunk. Less text for CPU to read = astronomically faster!
-    }
-)
+    # get_prompt_template() now directly returns a PromptTemplate object
+    PROMPT = get_prompt_template()
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm=components['llm'],
-    chain_type="stuff",
-    retriever=retriever,
-    return_source_documents=True,
-    chain_type_kwargs={"prompt": PROMPT}
-)
+    retriever = docsearch.as_retriever(
+        search_type="similarity", # Changed to standard similarity for fast execution
+        search_kwargs={
+            'k': 1 # Limit down to 1 chunk. Less text for CPU to read = astronomically faster!
+        }
+    )
+
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=components['llm'],
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": PROMPT}
+    )
+    return qa_chain
 
 # ===== Advanced Medical Filter =====
 MEDICAL_KEYWORDS = [
@@ -151,7 +161,9 @@ def chat():
             print("[Filtered] Non-medical question")
             return "I specialize in medical topics. Please ask health-related questions about symptoms, conditions, or treatments."
         
-        result = qa_chain.invoke({"query": user_input})
+        # Initialize lazily to prevent Vercel 10s cold-start crash
+        chain = get_qa_chain()
+        result = chain.invoke({"query": user_input})
         
         if not result.get("result"):
             print("[Error] Empty response from QA chain")
