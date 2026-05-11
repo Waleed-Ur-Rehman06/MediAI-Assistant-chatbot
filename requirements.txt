@@ -1,7 +1,6 @@
 pinecone-client
 langchain
 langchain-groq
-langchain-huggingface
 flask
 python-dotenv
 huggingface-hub
