@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediAI Medical Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/7657/7657179.png">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-content">
+                <img src="https://cdn-icons-png.flaticon.com/512/7657/7657179.png" alt="MediAI Logo" class="logo">
+                <div class="header-text">
+                    <h1>MediAI Assistant</h1>
+                    <p>AI for medical information</p>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <span class="online-dot"></span>
+                <span>Online</span>
+            </div>
+        </div>
+
+        <div class="chat-body" id="chatWindow">
+            <div class="message bot-message">
+                <div class="avatar">
+                    <img src="https://cdn-icons-png.flaticon.com/512/7657/7657179.png" alt="MediAI">
+                </div>
+                <div class="message-content">
+                    <p>Hello! I'm MediAI, your medical assistant. I can help with:</p>
+                    <ul>
+                        <li>Medical condition information</li>
+                        <li>Symptom analysis</li>
+                        <li>Medication details</li>
+                        <li>Treatment options</li>
+                    </ul>
+                    <p>How can I assist you today?</p>
+                    <div class="message-time">Just now</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input">
+            <form id="messageForm">
+                <input type="text" id="userInput" placeholder="Ask about symptoms, conditions, or treatments..." autocomplete="off">
+                <button type="submit" id="sendButton">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+            <div class="disclaimer">
+                <i class="fas fa-shield-alt"></i>
+                <span>For informational purposes only. Not a substitute for professional medical advice.</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Function to scroll chat window to the bottom
+            function scrollToBottom() {
+                const chatWindow = $('#chatWindow')[0];
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+
+            // Function to format the response text with simple markdown-like syntax
+            function formatResponse(text) {
+                // Convert **bold** to <strong>
+                text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                // Convert *italics* to <em>
+                text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                
+                // Convert lists starting with '-'
+                let listHtml = '';
+                const listItems = text.match(/^- .*/gm);
+                if (listItems) {
+                    listHtml = '<ul>' + listItems.map(item => `<li>${item.substring(2)}</li>`).join('') + '</ul>';
+                    text = text.replace(/^- .*/gm, ''); // Remove the list from the main text
+                    text = text.trim() + listHtml; // Append the formatted list at the end
+                }
+
+                // Add warning banners
+                text = text.replace(/\!WARNING:(.*?)\!/g, 
+                    '<div class="warning-banner"><i class="fas fa-exclamation-triangle"></i> $1</div>');
+                
+                // Add info banners
+                text = text.replace(/\!INFO:(.*?)\!/g, 
+                    '<div class="info-banner"><i class="fas fa-info-circle"></i> $1</div>');
+                
+                return text;
+            }
+
+            // Function to add a new message to the chat window
+            function addMessage(content, isUser) {
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const messageClass = isUser ? 'user-message' : 'bot-message';
+                const avatar = isUser 
+                    ? 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' 
+                    : 'https://cdn-icons-png.flaticon.com/512/7657/7657179.png';
+
+                const formattedContent = isUser ? `<p>${content}</p>` : `<div class="message-text">${formatResponse(content)}</div>`;
+
+                const messageHTML = `
+                    <div class="message ${messageClass}">
+                        <div class="avatar">
+                            <img src="${avatar}" alt="${isUser ? 'You' : 'MediAI'}">
+                        </div>
+                        <div class="message-content">
+                            ${formattedContent}
+                            <div class="message-time">${time}</div>
+                        </div>
+                    </div>`;
+                
+                $('#chatWindow').append(messageHTML);
+                scrollToBottom();
+            }
+
+            // Handle form submission
+            $('#messageForm').on('submit', function(e) {
+                e.preventDefault();
+                const userInput = $('#userInput').val().trim();
+                
+                if (!userInput) return;
+
+                // Add user message
+                addMessage(userInput, true);
+                $('#userInput').val('');
+
+                // Show typing indicator
+                const typingHTML = `
+                    <div class="message bot-message">
+                        <div class="avatar">
+                            <img src="https://cdn-icons-png.flaticon.com/512/7657/7657179.png" alt="MediAI">
+                        </div>
+                        <div class="message-content">
+                            <div class="typing-indicator">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                        </div>
+                    </div>`;
+                $('#chatWindow').append(typingHTML);
+                scrollToBottom();
+
+                // Send to backend
+                $.ajax({
+                    url: '/get',
+                    type: 'POST',
+                    data: { msg: userInput },
+                    success: function(response) {
+                        $('.typing-indicator').parent().parent().remove();
+                        addMessage(response, false);
+                    },
+                    error: function(xhr) {
+                        $('.typing-indicator').parent().parent().remove();
+                        // Display the error message from the backend if available, or a generic one
+                        const errorMessage = xhr.responseText || "Our medical service is temporarily unavailable. Please try again later.";
+                        addMessage(errorMessage, false);
+                        console.error("Error:", xhr.responseText);
+                    }
+                });
+            });
+
+            // Auto-focus input and handle Enter key
+            $('#userInput').focus().keypress(function(e) {
+                if (e.which === 13 && !e.shiftKey) {
+                    $('#messageForm').submit();
+                    return false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
