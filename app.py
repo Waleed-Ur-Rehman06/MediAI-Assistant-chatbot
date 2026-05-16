@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 from src.prompt import get_prompt_template
 from src.config import config
 import os
-import sys
 import re
+import traceback
 from typing import Dict, Any, Optional
 
 app = Flask(__name__)
@@ -34,6 +34,12 @@ def initialize_components() -> Dict[str, Any]:
     components = {}
     
     try:
+        if not PINECONE_API_KEY:
+            raise RuntimeError("PINECONE_API_KEY is missing from the environment.")
+
+        if not config.GROQ_API_KEY:
+            raise RuntimeError("GROQ_API_KEY is missing from the environment.")
+
         # 1. Initialize Pinecone
         pc = initialize_pinecone(index_name, PINECONE_API_KEY)
         index = pc.Index(index_name)
@@ -48,9 +54,6 @@ def initialize_components() -> Dict[str, Any]:
         print("Embeddings model loaded")
         
         # 3. Initialize High-Speed Cloud LLM via Groq (Sub-second responses)
-        if not config.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is missing from .env file!")
-            
         components['llm'] = ChatGroq(
             temperature=config.TEMPERATURE,
             groq_api_key=config.GROQ_API_KEY,
@@ -134,7 +137,8 @@ def is_medical_query(query: str) -> bool:
 
 def format_response(response: str) -> str:
     """Format the LLM response for better readability and enforce disclaimer at the absolute end."""
-    response = str(response).replace('Medical Answer:', '').replace('Safe Medical Answer:', '').strip()
+    response = "" if response is None else str(response)
+    response = response.replace('Medical Answer:', '').replace('Safe Medical Answer:', '').strip()
     
     # Strip any disclaimers the LLM might have hallucinated in the middle
     response = re.sub(r'(?i)\*?\*?disclaimer:\*?\*?.*', '', response, flags=re.DOTALL).strip()
@@ -175,13 +179,8 @@ def chat():
         return formatted_response
             
     except Exception as e:
-        import traceback
-        with open("error_log.txt", "w") as f:
-            f.write(traceback.format_exc())
-            
-        print(f"[Critical Error] {str(e)}")
-        # A more generic, user-friendly error message
-        return "I am experiencing technical difficulties. Please try again later."
+        print(f"[Critical Error] {traceback.format_exc()}")
+        return "I am experiencing technical difficulties. Please try again later.", 503
 
 if __name__ == '__main__':
     print("\nStarting MediAI server...")

@@ -2,9 +2,17 @@ import os
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-from pinecone import Pinecone, ServerlessSpec, PodSpec
 from typing import List
 from langchain.schema import Document
+
+try:
+    from pinecone import Pinecone, ServerlessSpec
+except Exception as import_error:  # pragma: no cover - import-time dependency guard
+    Pinecone = None
+    ServerlessSpec = None
+    PINECONE_IMPORT_ERROR = import_error
+else:
+    PINECONE_IMPORT_ERROR = None
 
 def load_pdf_data(pdf_path: str) -> List[Document]:
     """Load and extract text from a PDF file."""
@@ -35,24 +43,25 @@ def download_hugging_face_embeddings() -> HuggingFaceInferenceAPIEmbeddings:
     """Download and initialize the HuggingFace sentence-transformer embeddings model."""
     hf_token = os.environ.get('HF_TOKEN')
     if not hf_token:
-        # Fallback to local if no token provided (useful for local dev with PyTorch installed)
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-        print("Warning: No HF_TOKEN found in environment. Falling back to local HuggingFaceEmbeddings (requires PyTorch, will fail on Vercel).")
-        return HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-mpnet-base-v2",
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
+        raise RuntimeError("HF_TOKEN is required for embeddings in the Vercel runtime.")
+
+    try:
+        return HuggingFaceInferenceAPIEmbeddings(
+            api_key=hf_token,
+            model_name="sentence-transformers/all-mpnet-base-v2"
         )
-        
-    return HuggingFaceInferenceAPIEmbeddings(
-        api_key=hf_token,
-        model_name="sentence-transformers/all-mpnet-base-v2"
-    )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize Hugging Face embeddings: {exc}") from exc
 
 def initialize_pinecone(index_name: str, api_key: str) -> Pinecone:
     """Initialize Pinecone connection and create a serverless index if it doesn't exist."""
+    if PINECONE_IMPORT_ERROR is not None or Pinecone is None or ServerlessSpec is None:
+        raise RuntimeError(
+            "The pinecone package failed to import. Install the official 'pinecone' package instead of 'pinecone-client'."
+        ) from PINECONE_IMPORT_ERROR
+
     if not api_key:
-        raise ValueError("Pinecone API key is not set. Please check your .env file.")
+        raise RuntimeError("PINECONE_API_KEY is required to initialize Pinecone.")
         
     pc = Pinecone(api_key=api_key)
     
