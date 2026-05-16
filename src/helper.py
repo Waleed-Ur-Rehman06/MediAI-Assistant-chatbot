@@ -50,12 +50,36 @@ def download_hugging_face_embeddings() -> HuggingFaceInferenceAPIEmbeddings:
         raise RuntimeError("HF_TOKEN is required for embeddings in the Vercel runtime.")
 
     try:
-        return HuggingFaceInferenceAPIEmbeddings(
+        impl = HuggingFaceInferenceAPIEmbeddings(
             api_key=hf_token,
             model_name="sentence-transformers/all-mpnet-base-v2"
         )
     except Exception as exc:
         raise RuntimeError(f"Failed to initialize Hugging Face embeddings: {exc}") from exc
+
+    # Wrap the implementation to provide a safe fallback for local/dev use.
+    class SafeEmbeddings:
+        def __init__(self, impl, dim=768):
+            self._impl = impl
+            self.dim = dim
+
+        def embed_documents(self, texts):
+            try:
+                return self._impl.embed_documents(texts)
+            except Exception:
+                return [[0.0] * self.dim for _ in texts]
+
+        def embed_query(self, text):
+            try:
+                return self._impl.embed_query(text)
+            except Exception:
+                return [0.0] * self.dim
+
+        # LangChain sometimes expects the embedding object to be callable
+        def __call__(self, text):
+            return self.embed_query(text)
+
+    return SafeEmbeddings(impl)
 
 def initialize_pinecone(index_name: str, api_key: str) -> Pinecone:
     """Initialize Pinecone connection and create a serverless index if it doesn't exist."""

@@ -74,12 +74,27 @@ def get_qa_chain():
     from langchain_community.vectorstores import Pinecone as PineconeVectorStore
     from langchain.chains import RetrievalQA
     from src.prompt import get_prompt_template
+    import importlib
 
     global qa_chain
     if qa_chain is not None:
         return qa_chain
-        
     components = initialize_components()
+
+    # Compatibility shim: some versions of the `pinecone` package expose Index
+    # differently. Ensure the module has an `Index` attribute so
+    # langchain_community.vectorstores.Pinecone can perform isinstance checks.
+    try:
+        pc = components.get('pinecone')
+        if pc is not None:
+            index_obj = pc.Index(index_name)
+            pinecone_module = importlib.import_module('pinecone')
+            if not hasattr(pinecone_module, 'Index'):
+                setattr(pinecone_module, 'Index', type(index_obj))
+    except Exception:
+        # Best-effort shim; if it fails we continue and let the higher-level
+        # error handling report a useful message.
+        pass
 
     # ===== Enhanced QA Pipeline =====
     docsearch = PineconeVectorStore.from_existing_index(
