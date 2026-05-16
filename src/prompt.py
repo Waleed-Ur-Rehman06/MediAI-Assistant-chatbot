@@ -8,9 +8,13 @@ Your strict operational guidelines are:
 Base your factual, concise response ONLY on the text below.
 """
 
-def get_prompt_template() -> str:
+def get_prompt_template():
     """Returns the LangChain prompt template object integrating safety guidelines."""
-    from langchain.prompts import PromptTemplate
+    try:
+        from langchain_core.prompts import PromptTemplate
+    except ImportError:  # pragma: no cover - compatibility for older LangChain installs
+        from langchain.prompts import PromptTemplate
+
     prompt_template = f"""
 {SYSTEM_PROMPT}
 
