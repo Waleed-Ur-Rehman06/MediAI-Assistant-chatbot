@@ -3,7 +3,11 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from typing import List
-from langchain.schema import Document
+
+try:
+    from langchain_core.documents import Document
+except ImportError:  # pragma: no cover - compatibility for older LangChain installs
+    from langchain.docstore.document import Document
 
 try:
     from pinecone import Pinecone, ServerlessSpec
