@@ -1,16 +1,10 @@
 from flask import Flask, render_template, request, jsonify
-from src.helper import download_hugging_face_embeddings, initialize_pinecone
-from langchain_community.vectorstores import Pinecone as PineconeVectorStore
-from langchain.prompts import PromptTemplate
-from langchain_groq import ChatGroq
-from langchain.chains import RetrievalQA
 from dotenv import load_dotenv
-from src.prompt import get_prompt_template
 from src.config import config
 import os
 import re
 import traceback
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 app = Flask(__name__)
 load_dotenv()
@@ -34,6 +28,9 @@ def initialize_components() -> Dict[str, Any]:
     components = {}
     
     try:
+        from src.helper import download_hugging_face_embeddings, initialize_pinecone
+        from langchain_groq import ChatGroq
+
         if not PINECONE_API_KEY:
             raise RuntimeError("PINECONE_API_KEY is missing from the environment.")
 
@@ -74,6 +71,10 @@ def initialize_components() -> Dict[str, Any]:
 qa_chain = None
 
 def get_qa_chain():
+    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
+    from langchain.chains import RetrievalQA
+    from src.prompt import get_prompt_template
+
     global qa_chain
     if qa_chain is not None:
         return qa_chain
