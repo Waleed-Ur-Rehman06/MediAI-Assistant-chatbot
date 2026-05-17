@@ -69,6 +69,15 @@ def initialize_components() -> Dict[str, Any]:
 
 # Lazy initialization globals
 qa_chain = None
+app_components = None
+
+
+def get_components() -> Dict[str, Any]:
+    """Cache and return initialized application components."""
+    global app_components
+    if app_components is None:
+        app_components = initialize_components()
+    return app_components
 
 def get_qa_chain():
     from langchain_community.vectorstores import Pinecone as PineconeVectorStore
@@ -79,7 +88,7 @@ def get_qa_chain():
     global qa_chain
     if qa_chain is not None:
         return qa_chain
-    components = initialize_components()
+    components = get_components()
 
     # Compatibility shim: some versions of the `pinecone` package expose Index
     # differently. Ensure the module has an `Index` attribute so
@@ -163,6 +172,41 @@ def format_response(response: str) -> str:
     
     return response + disclaimer
 
+
+def looks_like_refusal(response: str) -> bool:
+    """Detect replies that are only a refusal or safety warning."""
+    if not response:
+        return True
+
+    lowered = response.lower().strip()
+    refusal_phrases = [
+        "i am a medical assistant. i can only answer health-related questions",
+        "i specialize in medical topics",
+        "i'm sorry, i don't have enough information to answer that safely",
+        "please consult a licensed healthcare professional",
+        "disclaimer",
+    ]
+    return any(phrase in lowered for phrase in refusal_phrases)
+
+
+def generate_fallback_answer(user_input: str) -> str:
+    """Generate a concise educational answer when retrieval is too thin."""
+    components = get_components()
+    llm = components["llm"]
+
+    fallback_prompt = (
+        "You are MediAI, a medical AI assistant. "
+        "Answer the user's general medical question in 2-5 concise sentences using reliable high-level medical knowledge. "
+        "Do not diagnose, prescribe, or provide personal treatment instructions. "
+        "If the question needs patient-specific evaluation, say that a healthcare professional is needed. "
+        "Keep the answer educational and end with a short safety note.\n\n"
+        f"Question: {user_input}\n\nAnswer:"
+    )
+
+    fallback_result = llm.invoke(fallback_prompt)
+    fallback_text = getattr(fallback_result, "content", fallback_result)
+    return format_response(fallback_text)
+
 # ===== Routes =====
 @app.route("/")
 def index():
@@ -187,9 +231,14 @@ def chat():
         
         if not result.get("result"):
             print("[Error] Empty response from QA chain")
-            return "I couldn't generate a response. Please try rephrasing your medical question."
+            return generate_fallback_answer(user_input)
             
-        formatted_response = format_response(result["result"])
+        raw_response = result["result"]
+        if looks_like_refusal(raw_response):
+            print("[Fallback] QA chain returned a refusal-style response")
+            return generate_fallback_answer(user_input)
+
+        formatted_response = format_response(raw_response)
         print(f"[Response Sent] {formatted_response[:200].strip()}...")
         
         return formatted_response
